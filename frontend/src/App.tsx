@@ -4,7 +4,7 @@ import { api, saveTokens, clearTokens } from "./api";
 
 // ─── THEME ───────────────────────────────────────────────────────────────────
 // ─── FEDAPAY CONFIG ──────────────────────────────────────────────────────────
-const FEDAPAY_PUBLIC_KEY = (import.meta as any).env?.VITE_FEDAPAY_PUBLIC_KEY || '';
+// const FEDAPAY_PUBLIC_KEY = (import.meta as any).env?.VITE_FEDAPAY_PUBLIC_KEY || '';
 
 const C = {
   primary: "#16a34a", primaryDark: "#0f7a36", primaryLight: "#22c55e",
@@ -417,52 +417,48 @@ const ActivationScreen = ({ user, onActivationDeposit }: any) => {
 
   const ACTIVATION_AMOUNT = 3500;
   const canPay = chain !== "";
-  const launchFedaPay = () => {
-    if (!FEDAPAY_PUBLIC_KEY) { setError('Configuration paiement absente. Contactez l’administrateur.'); return; }
-    if (!canPay) return;
-    setLoading(true); setError("");
-    const initFeda = () => {
-      try {
-        (window as any).FedaPay.init({
-          public_key: FEDAPAY_PUBLIC_KEY,
-          transaction: {
-            amount: ACTIVATION_AMOUNT,
-            description: "Activation compte GoldenFortune",
-          },
-          customer: {
-            email: user.email || "client@goldenfortune.com",
-            phone_number: { number: user.phone || "", country: user.country === "Togo" ? "TG" : user.country === "Bénin" ? "BJ" : user.country === "Sénégal" ? "SN" : user.country === "Côte d'Ivoire" ? "CI" : "TG" },
-          },
-          onComplete: (resp: any) => {
-            setLoading(false);
-            if (resp.reason === (window as any).FedaPay.DIALOG_DISMISSED) {
-              setError("Paiement annulé. Réessayez.");
-            } else {
-              onActivationDeposit(ACTIVATION_AMOUNT, chain, resp?.transaction?.id || resp?.transaction?.reference || `activation-${Date.now()}`);
-              setStep("pending");
-            }
-          },
-        }).open();
-      } catch(e) {
-        setLoading(false);
-        setError("Erreur lors du chargement du paiement. Réessayez.");
-      }
-    };
-    if ((window as any).FedaPay) {
-      initFeda();
-    } else {
-      const existing = document.querySelector('script[src*="fedapay"]');
-      if (!existing) {
-        const script = document.createElement("script");
-        script.src = "https://cdn.fedapay.com/checkout.js?v=1.1.7";
-        script.onload = () => initFeda();
-        script.onerror = () => { setLoading(false); setError("Impossible de charger FedaPay. Vérifiez votre connexion."); };
-        document.head.appendChild(script);
-      } else {
-        existing.addEventListener("load", initFeda);
-      }
+
+const launchFedaPay = async () => {
+  if (!canPay) {
+    setError("Veuillez sélectionner un moyen de paiement.");
+    return;
+  }
+
+  setLoading(true);
+  setError("");
+
+  try {
+    const txRef = `activation-${Date.now()}`;
+
+    const res = await api.deposit(
+      ACTIVATION_AMOUNT,
+      chain,
+      txRef
+    );
+
+    // Backend moderne : redirection FedaPay
+    if (res?.payment_url) {
+      window.location.href = res.payment_url;
+      return;
     }
-  };
+
+    // Fallback local
+    onActivationDeposit(
+      ACTIVATION_AMOUNT,
+      chain,
+      txRef
+    );
+
+    setStep("pending");
+
+  } catch (e: any) {
+    setError(
+      e?.message || "Erreur lors de l'initialisation du paiement."
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
   if (step === "pending") return (
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, textAlign: "center" }}>
